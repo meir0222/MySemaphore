@@ -1,4 +1,3 @@
-// Meir Hamou - 316132190
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
