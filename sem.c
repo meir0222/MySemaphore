@@ -7,55 +7,69 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-
 int semid;
 struct sembuf sops[1];
 
-union semun
-{
+union semun {
     int val;
-    struct semid_ds * buff;
+    struct semid_ds *buff;
     unsigned short *array;
 };
 union semun semarg;
 
-void main()
-{
-    int i, j, k, status, num = 1;
+int main(void) {
+    int i, j, k, status;
 
-    semid=semget(IPC_PRIVATE, 5, 0600);
-
-    for(i = 0; i < 5; i++)
-    {
-        semarg.val = 4 - i;
-        semctl(semid, i, SETVAL, semarg);
+    // Create semaphore set with 5 semaphores
+    semid = semget(IPC_PRIVATE, 5, 0600);
+    if (semid == -1) {
+        perror("semget failed");
+        exit(EXIT_FAILURE);
     }
 
-    sops->sem_num = 0;
-    sops->sem_flg = 0;
-
-    for (i = 0; i < 5; i++)
-    {
-        if (fork() == 0)
-        {
-            struct sembuf sop = { i, -4, 0};
-            for (j = i + 1; j < 101; j += 5)
-            {
-                semop(semid, &sop, 1);
-                printf("semaphore %d: %d\n",i,j);
-                for(k = 0; k < 5; k++)
-                {
-                    if(k != i) // checking that processes are not overlapping other and running accordingly on time.
-                    {
-                        sops->sem_op = 1;
-                        sops->sem_num = k;
-                        semop ( semid , sops , 1 );
-                    } 
-                }
-            }
-            exit(0);    // child is done
+    // Initialize semaphores
+    for (i = 0; i < 5; i++) {
+        semarg.val = 4 - i;
+        if (semctl(semid, i, SETVAL, semarg) == -1) {
+            perror("semctl failed");
+            exit(EXIT_FAILURE);
         }
     }
-    do ; while (wait(&status) > 0); // wait till all children are finished
-    semctl ( semid , 0 , IPC_RMID , semarg );
+
+    for (i = 0; i < 5; i++) {
+        if (fork() == 0) {
+            struct sembuf sop = { i, -4, 0 }; // Decrease semaphore by 4
+            for (j = i + 1; j < 101; j += 5) {
+                if (semop(semid, &sop, 1) == -1) {
+                    perror("semop failed");
+                    exit(EXIT_FAILURE);
+                }
+                printf("Semaphore %d: %d\n", i, j);
+
+                // Release other semaphores
+                for (k = 0; k < 5; k++) {
+                    if (k != i) {
+                        sops[0].sem_op = 1;
+                        sops[0].sem_num = k;
+                        if (semop(semid, sops, 1) == -1) {
+                            perror("semop release failed");
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                }
+            }
+            exit(0);
+        }
+    }
+
+    // Wait for all child processes
+    while (wait(&status) > 0);
+
+    // Remove semaphore set
+    if (semctl(semid, 0, IPC_RMID, semarg) == -1) {
+        perror("semctl remove failed");
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
 }
